@@ -897,7 +897,8 @@ Notes: the iSWIFT package is very prescriptive: datasets have to have certain na
 #| eval: false
 
 # Plot: one of "OmUpper", "OmLower", or "both"
-prepare_datasets <- function(plot) {
+# Species: a species designation, or NULL for all
+prepare_datasets <- function(plot, species = NULL) {
   library(lubridate)
   
   dat <- read.csv(paste0(dir, "Isotope_data_2025.csv"))
@@ -934,6 +935,11 @@ prepare_datasets <- function(plot) {
   
   # Remove the deuterium offset, as calculated above
   tree$d2H <<- tree$d2H + D2Hoffset 
+  
+  if (!is.null(species)) {
+    tree <- tree[tree$SpeciesCode == species,]
+  }
+  
   FD_T <<- data.frame(D2H=tree$d2H,
                      D18O=tree$d18O)
   FieldData <<- FD_T
@@ -1192,7 +1198,34 @@ for (i in 1:num_replicates) {
 }
 ```
 
+```{r omar-all-luq-by-species-data}
+#| eval: false
 
+for (species in c("CECSCH", "DACEXC", "MANBID", "PREMON", "SLOBER")) {
+  prepare_datasets("both", species)
+  
+  #----- Load our approximated sap flux density dataset --------------------#
+  load("../Runs/Approximated All Omar sap flux.Rdata")
+  SapFlow <- final_dat_all$Tree  # growth form specific sapflow 
+  
+  #----- Adjust sampling time parameter ------------------------------------#
+  tstudrange <- c(9,15)*tF  
+  
+  #----- Dataset specific variables ----------------------------------------#
+  DBHrange <- range(tree$DBH)*10^-2 # DBH [in m] 
+  relSF <- rep(SapFlow/sum(SapFlow),n) # generic relative SF data 
+  # repeated over 20 days
+  
+  for (i in 1:num_replicates) {
+    Beta.hat_T<-optim(0.95, fn=LogLikOptim, lower = 0.8, upper = 0.995, 
+                      method = "Brent")
+    Csyn_T<-CDPD(beta.i=Beta.hat_T$par)  # SWIFT generated output for best 
+    # beta estimate
+    save(Beta.hat_T, Csyn_T, 
+         file=paste0("../Runs/", species, "_AllOmarLuq", i, ".RData"))
+  }
+}
+```
 
 
 
