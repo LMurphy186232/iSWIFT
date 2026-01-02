@@ -1,0 +1,1418 @@
+---
+title: "Isotope Analysis"
+format: pdf
+author: "Lora Murphy"
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+#https://deep-tools.netlify.app/2020/11/21/treenetproc-intro/
+knitr::opts_chunk$set(error = TRUE) # Keep knitting on error
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+
+require(SWIFT)
+require(lhs)
+require(GenSA)
+require(sm)
+require(ks)
+require(sn)
+require(iSWIFT)
+
+library(tidyverse)
+
+dir <- "C:/Users/lora/Documents/MU/Isotope project/"
+soil_psi_dir <- "C:/Users/lora/Documents/MU/Isotope project/Zentra water potential data/"
+census_dir <- "C:/Users/lora/Documents/MU/Drought plots/DroughtExperimentRawData/BandDendrometers/Census Data/Band Dendrometer Census CSV/"
+target_trees_dir <- "C:/Users/lora/Documents/MU/Drought plots/DroughtExperimentRawData/"
+sapflow_dir <- "C:/Users/lora/Documents/MU/Drought plots/EcophysCampaigns/ProcessedSapFlowData/Re-cleaned_LB/5.SFMdata_February2025_Final/"
+
+
+num_replicates = 10
+```
+
+# Comments
+
+These results are okay for initial indications / first impressions, but a long ways from final work. The code from De Deurwaerder 2021 is of course very tightly coupled to their analysis, and so I had to stick to the same choices that they made whether or not they were best for our system. If we pursue this to publication, I would rewrite a lot of their code (which would be pretty fun!), which would of course require a longer timeframe.
+
+# Results
+
+I tested 6 configurations. I varied plot (Omar Upper alone, Omar Lower alone, and both together) and sap flux density data (De Deurwaerder 2021's sap flux density data for an average tropical tree, and an approximation of same from our data.)
+
+Briefly on the sap flux density: we don't have sap flux density data, only sap flow (and figuring out how to convert from one to the other was more than I could figure out so far). Since the code base I am using is not very flexible and has not been tested on other scenarios, I wanted to keep things as close to the De Deurwaerder analyses as possible. I chose to take the average tropical tree sap flux density data, and make it take on the statistical properties of our data. (More on that below; the datasets came out very similar.)
+
+De Deurwaerder 2021 did a set of analyses where parameters were very unrestricted, and a set where they were restricted (it was not a Bayesian analysis but it was similar to uninformed vs informed priors). I used the unrestricted setup.
+
+The figures below follow De Deurwaerder 2021 Figure 6.
+
+The table below follows De Deurwaerder 2021 Table 2, and contains:
+
+-  The plot (Omar upper, Omar Lower, or both combined)
+-  The sapflux dataset used ("generic" for that used in De Deurwaerder 2021, or "Luquillo" for the adjusted dataset that I made) 
+- The estimate for $\hat{\beta}$, the allocation parameter that defines the exponential vertical decay of $A_R$ (the absorbing root surfaces distribution) with soil depth
+-  The mean and confidence intervals (2.5%, 97.5%) for the inverse SWIFT simulated conditional density probability distributions for $\delta^2H$ and $\delta^{18}O$
+
+
+```{r plotting}
+#| echo: false
+
+display_table <- NULL
+
+#----- Omar Lower, Chen et al sapflux ----------------------------------------#
+load("../Runs/OmarLowerChen.RData")
+olc_betahat <- Beta.hat_T
+olc_csyn <- Csyn_T
+
+mean_D2H = mean(Csyn_T[,"D2H"])
+D2H2.5 <- quantile(Csyn_T[,"D2H"], 0.025)
+D2H975.5 <- quantile(Csyn_T[,"D2H"], 0.975)
+
+mean_D18O = mean(Csyn_T[,"D18O"])
+D18O2.5 <- quantile(Csyn_T[,"D18O"], 0.025)
+D18O975.5 <- quantile(Csyn_T[,"D18O"], 0.975)
+display_table <- 
+  rbind(display_table, 
+        data.frame(Plot = "Omar Lower",
+                   Sapflux = "Generic",
+                   Beta_hat = round(Beta.hat_T$par, 3),
+                   D2H_mean = paste0(round(mean_D2H,2),
+                                    " [", round(D2H2.5, 2),
+                                    ", ", round(D2H975.5, 2), "]"),
+                   D18O_mean = paste0(round(mean_D18O,2),
+                                    " [", round(D18O2.5, 2),
+                                    ", ", round(D18O975.5, 2), "]"),
+                   Converged = Beta.hat_T$convergence==0))
+rm(Beta.hat_T, Csyn_T)
+
+
+#----- Omar Upper, Chen et al sapflux ----------------------------------------#
+load("../Runs/OmarUpperChen.RData")
+ouc_betahat <- Beta.hat_T
+ouc_csyn <- Csyn_T
+
+mean_D2H = mean(Csyn_T[,"D2H"])
+D2H2.5 <- quantile(Csyn_T[,"D2H"], 0.025)
+D2H975.5 <- quantile(Csyn_T[,"D2H"], 0.975)
+
+mean_D18O = mean(Csyn_T[,"D18O"])
+D18O2.5 <- quantile(Csyn_T[,"D18O"], 0.025)
+D18O975.5 <- quantile(Csyn_T[,"D18O"], 0.975)
+display_table <- 
+  rbind(display_table, 
+        data.frame(Plot = "Omar Upper",
+                   Sapflux = "Generic",
+                   Beta_hat = round(Beta.hat_T$par, 3),
+                   D2H_mean = paste0(round(mean_D2H,2),
+                                    " [", round(D2H2.5, 2),
+                                    ", ", round(D2H975.5, 2), "]"),
+                   D18O_mean = paste0(round(mean_D18O,2),
+                                    " [", round(D18O2.5, 2),
+                                    ", ", round(D18O975.5, 2), "]"),
+                   Converged = Beta.hat_T$convergence==0))
+rm(Beta.hat_T, Csyn_T)
+
+
+#----- Omar Lower, Luquillo sapflux ------------------------------------------#
+load("../Runs/OmarLowerLuq.RData")
+oll_betahat <- Beta.hat_T
+oll_csyn <- Csyn_T
+mean_D2H = mean(Csyn_T[,"D2H"])
+D2H2.5 <- quantile(Csyn_T[,"D2H"], 0.025)
+D2H975.5 <- quantile(Csyn_T[,"D2H"], 0.975)
+
+mean_D18O = mean(Csyn_T[,"D18O"])
+D18O2.5 <- quantile(Csyn_T[,"D18O"], 0.025)
+D18O975.5 <- quantile(Csyn_T[,"D18O"], 0.975)
+display_table <- 
+  rbind(display_table, 
+        data.frame(Plot = "Omar Lower",
+                   Sapflux = "Luquillo",
+                   Beta_hat = round(Beta.hat_T$par, 3),
+                   D2H_mean = paste0(round(mean_D2H,2),
+                                    " [", round(D2H2.5, 2),
+                                    ", ", round(D2H975.5, 2), "]"),
+                   D18O_mean = paste0(round(mean_D18O,2),
+                                    " [", round(D18O2.5, 2),
+                                    ", ", round(D18O975.5, 2), "]"),
+                   Converged = Beta.hat_T$convergence==0))
+rm(Beta.hat_T, Csyn_T)
+
+
+#----- Omar Upper, Luquillo sapflux ------------------------------------------#
+load("../Runs/OmarUpperLuq.RData")
+oul_betahat <- Beta.hat_T
+oul_csyn <- Csyn_T
+mean_D2H = mean(Csyn_T[,"D2H"])
+D2H2.5 <- quantile(Csyn_T[,"D2H"], 0.025)
+D2H975.5 <- quantile(Csyn_T[,"D2H"], 0.975)
+
+mean_D18O = mean(Csyn_T[,"D18O"])
+D18O2.5 <- quantile(Csyn_T[,"D18O"], 0.025)
+D18O975.5 <- quantile(Csyn_T[,"D18O"], 0.975)
+display_table <- 
+  rbind(display_table, 
+        data.frame(Plot = "Omar Upper",
+                   Sapflux = "Luquillo",
+                   Beta_hat = round(Beta.hat_T$par, 3),
+                   D2H_mean = paste0(round(mean_D2H,2),
+                                    " [", round(D2H2.5, 2),
+                                    ", ", round(D2H975.5, 2), "]"),
+                   D18O_mean = paste0(round(mean_D18O,2),
+                                    " [", round(D18O2.5, 2),
+                                    ", ", round(D18O975.5, 2), "]"),
+                   Converged = Beta.hat_T$convergence==0))
+rm(Beta.hat_T, Csyn_T)
+
+
+#----- Omar combined, Chen et al sapflux -------------------------------------#
+load("../Runs/AllOmarChen.RData")
+aoc_betahat <- Beta.hat_T
+aoc_csyn <- Csyn_T
+mean_D2H = mean(Csyn_T[,"D2H"])
+D2H2.5 <- quantile(Csyn_T[,"D2H"], 0.025)
+D2H975.5 <- quantile(Csyn_T[,"D2H"], 0.975)
+
+mean_D18O = mean(Csyn_T[,"D18O"])
+D18O2.5 <- quantile(Csyn_T[,"D18O"], 0.025)
+D18O975.5 <- quantile(Csyn_T[,"D18O"], 0.975)
+display_table <- 
+  rbind(display_table, 
+        data.frame(Plot = "Omar Combined",
+                   Sapflux = "Generic",
+                   Beta_hat = round(Beta.hat_T$par, 3),
+                   D2H_mean = paste0(round(mean_D2H,2),
+                                    " [", round(D2H2.5, 2),
+                                    ", ", round(D2H975.5, 2), "]"),
+                   D18O_mean = paste0(round(mean_D18O,2),
+                                    " [", round(D18O2.5, 2),
+                                    ", ", round(D18O975.5, 2), "]"),
+                   Converged = Beta.hat_T$convergence==0))
+rm(Beta.hat_T, Csyn_T)
+
+
+#----- Omar combined, Luquillo sapflux ---------------------------------------#
+load("../Runs/AllOmarLuq.RData")
+aol_betahat <- Beta.hat_T
+aol_csyn <- Csyn_T
+mean_D2H = mean(Csyn_T[,"D2H"])
+D2H2.5 <- quantile(Csyn_T[,"D2H"], 0.025)
+D2H975.5 <- quantile(Csyn_T[,"D2H"], 0.975)
+
+mean_D18O = mean(Csyn_T[,"D18O"])
+D18O2.5 <- quantile(Csyn_T[,"D18O"], 0.025)
+D18O975.5 <- quantile(Csyn_T[,"D18O"], 0.975)
+display_table <- 
+  rbind(display_table, 
+        data.frame(Plot = "Omar Combined",
+                   Sapflux = "Luquillo",
+                   Beta_hat = round(Beta.hat_T$par, 3),
+                   D2H_mean = paste0(round(mean_D2H,2),
+                                    " [", round(D2H2.5, 2),
+                                    ", ", round(D2H975.5, 2), "]"),
+                   D18O_mean = paste0(round(mean_D18O,2),
+                                    " [", round(D18O2.5, 2),
+                                    ", ", round(D18O975.5, 2), "]"),
+                   Converged = Beta.hat_T$convergence==0))
+rm(Beta.hat_T, Csyn_T)
+
+knitr::kable(display_table[,1:5],
+             col.names = c("Plot",
+                           "Sapflux",
+                           "$\\hat{\\beta}$",
+                           "$\\delta^2H$", 
+                           "$\\delta^{18}O$"),
+             booktabs=T) #%>%
+  #kable_styling(latex_options = "striped")
+
+all_dat <- read.csv(paste0(dir, "Isotope_data_2025.csv"))
+all_dat <- all_dat[all_dat$Type == "Sapwood",]
+
+# Making a simple plot of the field data and iSWIFT output 
+#----------------------------------------------------------
+xlabel=expression(paste(delta,""^18,"O [","\u{2030}","]"))
+ylabel=expression(paste(delta,""^2,"H [","\u{2030}","]"))
+
+
+#-----------------------------------------------------------------------------#
+# Omar Upper
+#-----------------------------------------------------------------------------#
+# Plot field data
+plot(all_dat$d18O[all_dat$Plot=="OmUpper"], 
+     all_dat$d2H[all_dat$Plot=="OmUpper"], 
+     ylim=c(-25,10), 
+     xlim=c(-8,3),
+     xlab=xlabel, ylab=ylabel, 
+     main="Omar Upper",
+     mgp = c(2, 0.8, 0), las=1, pch=20, 
+     col='tan1')
+#points(all_dat$d18O[all_dat$Plot=="OmLower"], 
+#     all_dat$d2H[all_dat$Plot=="OmLower"], las=1, pch=20, col="firebrick4")
+
+# plot SWIFT generated 'Tree' isotope data
+points(mean(ouc_csyn[,"D18O"]),mean(ouc_csyn[,"D2H"]),
+       col="darkorchid", pch=15)
+text(mean(ouc_csyn[,"D18O"]),mean(ouc_csyn[,"D2H"])+2,
+     c(round(ouc_betahat$par,3)), col="darkorchid", pos=2, cex=0.7)
+arrows(mean(ouc_csyn[,"D18O"]), 
+       mean(ouc_csyn[,"D2H"])-2*sd(ouc_csyn[,"D2H"]),
+       mean(ouc_csyn[,"D18O"]), 
+       mean(ouc_csyn[,"D2H"])+2*sd(ouc_csyn[,"D2H"]), 
+       length = 0, col="darkorchid", lwd=1.5, lty=2)
+arrows(mean(ouc_csyn[,"D18O"])-2*sd(ouc_csyn[,"D18O"]), mean(ouc_csyn[,"D2H"]),
+       mean(ouc_csyn[,"D18O"])+2*sd(ouc_csyn[,"D18O"]), mean(ouc_csyn[,"D2H"]), 
+       length = 0, col="darkorchid", lwd=1.5, lty=2)
+
+
+points(mean(oul_csyn[,"D18O"]),mean(oul_csyn[,"D2H"]),
+       col="darkorchid", pch=15)
+text(mean(oul_csyn[,"D18O"]),mean(oul_csyn[,"D2H"])+2,
+     c(round(oul_betahat$par,3)), col="darkorchid", pos=2, cex=0.7)
+arrows(mean(oul_csyn[,"D18O"]), 
+       mean(oul_csyn[,"D2H"])-2*sd(oul_csyn[,"D2H"]),
+       mean(oul_csyn[,"D18O"]), 
+       mean(oul_csyn[,"D2H"])+2*sd(oul_csyn[,"D2H"]), 
+       length = 0, col="darkorchid", lwd=1.5, lty=1)
+arrows(mean(oul_csyn[,"D18O"])-2*sd(oul_csyn[,"D18O"]), mean(oul_csyn[,"D2H"]),
+       mean(oul_csyn[,"D18O"])+2*sd(oul_csyn[,"D18O"]), mean(oul_csyn[,"D2H"]), 
+       length = 0, col="darkorchid", lwd=1.5, lty=1)
+
+
+
+# add legend
+legend('topleft', legend = c(
+  "Observed tree data",
+  "Generic sapflux",
+  "Luquillo sapflux"),
+       col=c('tan1','darkorchid', "darkorchid"),
+       pch=c(20, NA, NA), 
+       lty=c(NA, 2, 1),
+  bty='n')
+
+
+
+
+#-----------------------------------------------------------------------------#
+# Omar Lower
+#-----------------------------------------------------------------------------#
+# Plot field data
+plot(all_dat$d18O[all_dat$Plot=="OmLower"], 
+     all_dat$d2H[all_dat$Plot=="OmLower"], 
+     ylim=c(-25,10), 
+     xlim=c(-8,3),
+     xlab=xlabel, ylab=ylabel, 
+     main="Omar Lower",
+     mgp = c(2, 0.8, 0), las=1, pch=20, 
+     col='firebrick4')
+
+# plot SWIFT generated 'Tree' isotope data
+points(mean(olc_csyn[,"D18O"]),mean(olc_csyn[,"D2H"]),
+       col="springgreen4", pch=15)
+text(mean(olc_csyn[,"D18O"]),mean(olc_csyn[,"D2H"])+2,
+     c(round(olc_betahat$par,3)), col="springgreen4", pos=2, cex=0.7)
+arrows(mean(olc_csyn[,"D18O"]), 
+       mean(olc_csyn[,"D2H"])-2*sd(olc_csyn[,"D2H"]),
+       mean(olc_csyn[,"D18O"]), 
+       mean(olc_csyn[,"D2H"])+2*sd(olc_csyn[,"D2H"]), 
+       length = 0, col="springgreen4", lwd=1.5, lty=2)
+arrows(mean(olc_csyn[,"D18O"])-2*sd(olc_csyn[,"D18O"]), mean(olc_csyn[,"D2H"]),
+       mean(olc_csyn[,"D18O"])+2*sd(olc_csyn[,"D18O"]), mean(olc_csyn[,"D2H"]), 
+       length = 0, col="springgreen4", lwd=1.5, lty=2)
+
+
+points(mean(oll_csyn[,"D18O"]),mean(oll_csyn[,"D2H"]),
+       col="springgreen4", pch=15)
+text(mean(oll_csyn[,"D18O"]),mean(oll_csyn[,"D2H"])-2,
+     c(round(oll_betahat$par,3)), col="springgreen4", pos=2, cex=0.7)
+arrows(mean(oll_csyn[,"D18O"]), 
+       mean(oll_csyn[,"D2H"])-2*sd(oll_csyn[,"D2H"]),
+       mean(oll_csyn[,"D18O"]), 
+       mean(oll_csyn[,"D2H"])+2*sd(oll_csyn[,"D2H"]), 
+       length = 0, col="springgreen4", lwd=1.5, lty=1)
+arrows(mean(oll_csyn[,"D18O"])-2*sd(oll_csyn[,"D18O"]), mean(oll_csyn[,"D2H"]),
+       mean(oll_csyn[,"D18O"])+2*sd(oll_csyn[,"D18O"]), mean(oll_csyn[,"D2H"]), 
+       length = 0, col="springgreen4", lwd=1.5, lty=1)
+
+
+
+# add legend
+legend('topleft', legend = c(
+  "Observed tree data",
+  "Generic sapflux",
+  "Luquillo sapflux"),
+       col=c('firebrick4','springgreen4', "springgreen4"),
+       pch=c(20, NA, NA), 
+       lty=c(NA, 2, 1),
+  bty='n')
+
+
+
+#-----------------------------------------------------------------------------#
+# Omar combined
+#-----------------------------------------------------------------------------#
+# Plot field data
+plot(all_dat$d18O[all_dat$Plot=="OmLower"], 
+     all_dat$d2H[all_dat$Plot=="OmLower"], 
+     ylim=c(-25,10), 
+     xlim=c(-8,3),
+     xlab=xlabel, ylab=ylabel, 
+     main="Omar Combined",
+     mgp = c(2, 0.8, 0), las=1, pch=20, 
+     col='firebrick4')
+points(all_dat$d18O[all_dat$Plot=="OmUpper"], 
+     all_dat$d2H[all_dat$Plot=="OmUpper"], 
+     las=1, pch=20, 
+     col='tan1')
+
+# plot SWIFT generated 'Tree' isotope data
+points(mean(aoc_csyn[,"D18O"]),mean(aoc_csyn[,"D2H"]),
+       col="dodgerblue4", pch=15)
+text(mean(aoc_csyn[,"D18O"]),mean(aoc_csyn[,"D2H"])+2,
+     c(round(aoc_betahat$par,3)), col="dodgerblue4", pos=2, cex=0.7)
+arrows(mean(aoc_csyn[,"D18O"]), 
+       mean(aoc_csyn[,"D2H"])-2*sd(aoc_csyn[,"D2H"]),
+       mean(aoc_csyn[,"D18O"]), 
+       mean(aoc_csyn[,"D2H"])+2*sd(aoc_csyn[,"D2H"]), 
+       length = 0, col="dodgerblue4", lwd=1.5, lty=2)
+arrows(mean(aoc_csyn[,"D18O"])-2*sd(aoc_csyn[,"D18O"]), mean(aoc_csyn[,"D2H"]),
+       mean(aoc_csyn[,"D18O"])+2*sd(aoc_csyn[,"D18O"]), mean(aoc_csyn[,"D2H"]), 
+       length = 0, col="dodgerblue4", lwd=1.5, lty=2)
+
+
+points(mean(aol_csyn[,"D18O"]),mean(aol_csyn[,"D2H"]),
+       col="dodgerblue4", pch=15)
+text(mean(aol_csyn[,"D18O"]),mean(aol_csyn[,"D2H"])+2,
+     c(round(aol_betahat$par,3)), col="dodgerblue4", pos=2, cex=0.7)
+arrows(mean(aol_csyn[,"D18O"]), 
+       mean(aol_csyn[,"D2H"])-2*sd(aol_csyn[,"D2H"]),
+       mean(aol_csyn[,"D18O"]), 
+       mean(aol_csyn[,"D2H"])+2*sd(aol_csyn[,"D2H"]), 
+       length = 0, col="dodgerblue4", lwd=1.5, lty=1)
+arrows(mean(aol_csyn[,"D18O"])-2*sd(aol_csyn[,"D18O"]), mean(aol_csyn[,"D2H"]),
+       mean(aol_csyn[,"D18O"])+2*sd(aol_csyn[,"D18O"]), mean(aol_csyn[,"D2H"]), 
+       length = 0, col="dodgerblue4", lwd=1.5, lty=1)
+
+
+
+# add legend
+legend('topleft', legend = c(
+  "Generic sapflux",
+  "Luquillo sapflux"),
+       col=c('dodgerblue4', "dodgerblue4"),
+       lty=c(2, 1),
+  bty='n')
+```
+
+
+
+
+
+# Data notes
+
+## Soil
+
+### Soil water potential
+The De Deurwaerder 2021 analysis uses a depth profile of soil water potential ($\Psi$), with the mean and standard deviation of $\Psi$ at each depth.
+
+Thanks to Xiangtao Xu's lab, we have some soil water potential data. They have a Teros21 soil water potential sensor installed in each plot with data back to 2023. However, we do not have a depth profile: sensors were only deployed at one depth (20 cm for Omar Lower, and 30 cm for Omar Upper). I must therefore assume that the soil properties are constant all the way down. The iSWIFT algorithm will simulate depth differences by taking repeated random draws on the mean and standard deviation of $\Psi$. **This may not be the correct approach. I should maybe enforce a uniform $\Psi$.**
+
+## Local meteoric water line and deuterium offset
+
+From De Deurwaerder 2021, Appendix B:
+
+>  Craig (1961) established that alterations in isotope composition ($\delta2H$ to $\delta18O$) in source water would typically describe a fixed linear relationship when the source water is exclusively subjected to equilibrium fractionation, i.e., phase change reactions of water are in equilibrium. This empirical relationship between $\delta2H$ and $\delta18O$ within a catchment is known as the local meteoric water line (LMWL) and can be used to derive $\delta18OS$ from $\delta2HS$ or vice versa as long as the system is considered in equilibrium conditions. 
+
+> The global meteoric water line of Rozanski et al. (1993) (GMWL: $\delta2H = 8.2 * \delta18O + 11.3$), which represents the globally obtained empirical relationship between $\delta2H$ and $\delta18O$, forms acceptable, but less ideal alternative when LMWL relations are not available.
+
+The calculation of a LMWL requires sampling stable isotope concentrations in precipitation, so I will use GMWL values.
+
+From De Deurwaerder 2021, Appendix D:
+
+> The xylem water isotope compositions of both lianas and trees are unidirectionally shifted compared to both the LMWL and $\delta_{soil}$ (Figs. S3-S4). The origin of this $\delta2H$ offset is still debated (Barbeta et al., 2019, 2020; Chen et al., 2020), but if not accounted for will imply incorrect model assessment. Therefore, the $\delta2H$ offset was calculated as the difference in the y-axis intercepts of the LMWL and the regression line established from all $\delta_{xyl}$ with the LMWL slope. Hence, by doing so, $\delta_{xyl}$ samples can be represented as if no fractionation in $\delta2H$ occurred.
+
+We have already established that we will use the GMWL. Here is the data:
+
+```{r}
+#| echo: false
+#| results: asis
+
+library(ggplot2)
+#-------------------------------------------------------------------------#
+# Compare the line of delta2H and delta18O with the GWML
+#-------------------------------------------------------------------------#
+dat <- read.csv(paste0(dir, "Isotope_data_2025.csv"))
+
+fit <- lm(d2H ~ d18O, data = dat[dat$Type == "Sapwood",])
+
+ggplot(data = dat, aes(x = d18O, y = d2H, pch=Type, color=Type)) +
+  geom_point() + theme_bw() +
+  geom_abline(slope = 8.2, intercept = 11.3, lty=2) +
+  geom_abline(slope = fit$coefficients["d18O"], 
+              intercept = fit$coefficients["(Intercept)"]) +
+  ggtitle("Dotted Line = GMWL; solid = regression of xylem values")
+
+D2Hoffset <- 11.3 - fit$coefficients["(Intercept)"]
+
+cat(paste0("\n\nThe deuterium offset is thus ", round(D2Hoffset,2), 
+           ". De Deurwaerder 2021 calculated a value of 6.855 from their LMWL.\n\n"))
+```
+
+## Sapflow
+
+Here is the description of the sapflow data used by De Deurwaerder 2021:
+
+> 'SapfluxData' -> Sapflux densities for Trees and Liana normalized per sapwood area. Data adapted from Chen et al. (2017) [Fig 5b, in kg m-2 s-1]. This data is obtained in Xishuangbanna Tropical Botanical Garden (21°540N, 101°460E) in south of Yunnan Province, China. These data show the sap flux density per growth form, obtained from 4 distinct tropical liana and 4 distinct tropical tree species (3 to 5 indiv. per species). 
+
+> General Description: This dataset shows the result of curve fitting optimization of the Chen et al. (2017) sapflow rates, extracted from fig 5b. Sapflow rates are provided' for each minute, but expressed in kg m-2 s-1.
+
+> This dataset was digitized from the published paper by Chen et al. (2017). 
+
+> Methods: Sap ﬂow was monitored during the end of the wet season (8–21 October 2012) using granier sensors. More details are provided in the respective paper by Chen et al. (2017). Functional Ecology. doi: 10.1111/1365-2435.12724 
+
+So in other words, all trees just used a single "tree" average daily sapflow profile.
+
+I was looking into it and not all sensors are good for measuring sap flux density; our sapflow data analysis tool would automatically output sap flux density if we had the right kind. But it looks like we don't; we get sap flow. Chen et al 2017 had the right sensor apparently.
+
+If I average up the daily sap flow over plot trees, it is a couple of orders of magnitude off from sap flux density. Let's compare the general look though:
+
+```{r}
+#| echo: false
+
+library(tidyverse)
+cm2_to_m2 <- 1/10000
+
+all_dat <- read.csv(paste0(dir, "Isotope_data_2025.csv"))
+all_treeIDs <- 
+  read.csv(paste0(target_trees_dir,
+                  "TargetTrees_Pointdendro_updatedMarch2025.csv"))
+
+
+all_dat <- all_dat[which(all_dat$Type == "Sapwood"),]
+treeIDs <- all_treeIDs[all_treeIDs$TreeTag %in% all_dat$TreeID,]
+treeIDs$Stem.SapFlowMeter <- gsub("XX", "", treeIDs$Stem.SapFlowMeter)
+
+sapflow_files <- list.files(sapflow_dir, pattern="Calculations")
+all_sf <- NULL
+for (i in 1:nrow(treeIDs)) {
+  
+  plot <- all_dat$Plot[all_dat$TreeID == treeIDs$TreeTag[i]]
+  x <- grep(paste0(treeIDs$Stem.SapFlowMeter[i], " "), sapflow_files)
+  if (length(x) > 1) stop("NO")
+  
+  if (length(x) == 1) {
+    #----- Find where data starts ----------------------------------------#
+    con <- file(paste0(sapflow_dir, sapflow_files[x]))
+    ldat <- readLines(con)
+    close(con)
+    goodline <- grep("Upstream data filters:", ldat)
+    
+    sf <- read.csv(paste0(sapflow_dir, sapflow_files[x]),
+                   skip = (goodline + 1))
+    rm(ldat)
+    
+    sf <- sf[2:nrow(sf),]
+    sf$Plot = plot
+    all_sf <- rbind(all_sf, sf)
+  }
+}
+all_sf$DT <- as.POSIXct(all_sf$Date.Time, 
+                        format = "%m/%d/%Y %I:%M %p",
+                        tz="America/Puerto_Rico")
+all_sf$Hour <- hour(all_sf$DT)
+all_sf$TotalFlowRate <- as.numeric(all_sf$TotalFlowRate)
+
+#-------------------------------------------------------------------------#
+# Omar Upper
+#-------------------------------------------------------------------------#
+omar_upper <- all_sf %>% 
+  filter(Plot == "OmUpper") %>%
+  group_by(Hour) %>% 
+  summarize(Mean = mean(TotalFlowRate)/3600)
+
+
+#-------------------------------------------------------------------------#
+# Omar Lower
+#-------------------------------------------------------------------------#
+omar_lower <- all_sf %>% 
+  filter(Plot == "OmLower") %>%
+  group_by(Hour) %>% 
+  summarize(Mean = mean(TotalFlowRate)/3600)
+
+
+
+
+
+data("SapfluxData")
+SapfluxData$time2 <- as.numeric(SapfluxData$time)
+
+graph_dat <- rbind(
+  data.frame(timeDec = omar_upper$Hour/24, Tree = omar_upper$Mean) %>%
+    mutate(type = "Average sap flow from Omar Upper plot trees"),
+  data.frame(timeDec = omar_lower$Hour/24, Tree = omar_lower$Mean) %>%
+    mutate(type = "Average sap flow from Omar Lower plot trees"),
+  SapfluxData %>% select(timeDec, Tree) %>% 
+    mutate(type = "Chen et al 2017 sap flux density"))
+graph_dat$timeDec <- graph_dat$timeDec * 24
+
+ggplot(data = graph_dat, aes(x = timeDec, y = Tree)) +
+  geom_line() +
+  facet_wrap(~type, scales="free", nrow=3) +
+  theme_bw() +
+  labs(x = "Hour of day", y = "")
+  
+```
+
+We can see that they are broadly similar. It would be nice to be able to put in our exact data, and to use individual tree sap flow rather than a plot average, but both of those things would require reworking the code and might belong more under future work. For now, I am going to do a quick and dirty analysis: I am going to use the Chen et al 2017 dataset (justified in a general sense, since De Deurwaerder 2021 already did it), and a modified dataset where I change the shape of the Chen et al 2017 data to match the shape of our curve but keep the same global maximum and thus the same units. This is not really justifiable for publication but would answer the question of what we might expect to see, and how much it matters. And since the iSWIFT code is written solely for this analysis, with lots of constants that work with the Chen et al data, this should give us realistic estimates.
+
+```{r estimated-sap-flux}
+#| echo: false
+#| eval: false
+
+library(zoo)
+#----- Create a sap flux dataset based on our data -----------------------#
+adj <- omar_upper$Mean - min(omar_upper$Mean)
+omar_upper$Proportion <- adj / max(adj)
+omar_upper$Tree <- omar_upper$Proportion * 
+  (max(SapfluxData$Tree) - min(SapfluxData$Tree)) +
+  min(SapfluxData$Tree)
+
+
+adj <- omar_lower$Mean - min(omar_lower$Mean)
+omar_lower$Proportion <- adj / max(adj)
+omar_lower$Tree <- omar_lower$Proportion * 
+  (max(SapfluxData$Tree) - min(SapfluxData$Tree)) +
+  min(SapfluxData$Tree)
+
+
+all_omar <- all_sf %>% 
+  group_by(Hour) %>% 
+  summarize(Mean = mean(TotalFlowRate)/3600)
+adj <- all_omar$Mean - min(all_omar$Mean)
+all_omar$Proportion <- adj / max(adj)
+all_omar$Tree <- all_omar$Proportion * 
+  (max(SapfluxData$Tree) - min(SapfluxData$Tree)) +
+  min(SapfluxData$Tree)
+
+#----- Expand out to per-minute ------------------------------------------#
+final_dat_upper <- NULL
+final_dat_lower <- NULL
+timeDec <- (0:59)/(24*60)
+time <- paste(0, 0:59, sep=":")
+setup <- c(omar_upper$Tree[24], rep(NA, 58), omar_upper$Tree[1])
+final_dat_upper <- data.frame(timeDec = timeDec, 
+                              time = time,
+                              Tree = na.approx(setup))
+
+setup <- c(omar_lower$Tree[24], rep(NA, 58), omar_lower$Tree[1])
+final_dat_lower <- data.frame(timeDec = timeDec, 
+                              time = time,
+                              Tree = na.approx(setup))
+
+setup <- c(all_omar$Tree[24], rep(NA, 58), all_omar$Tree[1])
+final_dat_all <- data.frame(timeDec = timeDec, 
+                              time = time,
+                              Tree = na.approx(setup))
+
+for (i in 2:24) {
+  timeDec <- ((i-1)*60 + 0:59)/(24*60)
+  time <- paste((i-1), 0:59, sep=":")
+  setup <- c(omar_upper$Tree[i], rep(NA, 58), omar_upper$Tree[i+1])
+  final_dat_upper <- rbind(final_dat_upper,
+                           data.frame(timeDec = timeDec, 
+                              time = time,
+                              Tree = na.approx(setup)))
+  
+  setup <- c(omar_lower$Tree[i], rep(NA, 58), omar_lower$Tree[i+1])
+  final_dat_lower <- rbind(final_dat_lower,
+                           data.frame(timeDec = timeDec, 
+                              time = time,
+                              Tree = na.approx(setup)))
+  
+  setup <- c(all_omar$Tree[i], rep(NA, 58), all_omar$Tree[i+1])
+  final_dat_all <- rbind(final_dat_all,
+                         data.frame(timeDec = timeDec, 
+                         time = time,
+                         Tree = na.approx(setup)))
+}
+save(final_dat_upper, file = "../Runs/Approximated Omar Upper sap flux.Rdata")
+save(final_dat_lower, file = "../Runs/Approximated Omar Lower sap flux.Rdata")
+save(final_dat_all, file = "../Runs/Approximated All Omar sap flux.Rdata")
+```
+
+```{r}
+#| echo: false
+
+load("../Runs/Approximated Omar Upper sap flux.Rdata")
+load("../Runs/Approximated Omar Lower sap flux.Rdata")
+load("../Runs/Approximated All Omar sap flux.Rdata")
+
+graph_dat <- rbind(
+  final_dat_upper %>%
+    mutate(type = "Approximated mean sap flux density Omar Upper"),
+  final_dat_lower %>%
+    mutate(type = "Approximated mean sap flux density Omar Lower"),
+  final_dat_all %>%
+    mutate(type = "Approximated mean sap flux density all Omar"),
+  SapfluxData %>% select(timeDec, time, Tree) %>% 
+    mutate(type = "Chen et al 2017 sap flux density"))
+graph_dat$timeDec <- graph_dat$timeDec * 24
+
+ggplot(data = graph_dat, aes(x = timeDec, y = Tree, color=type)) +
+  geom_line() +
+  theme_bw() +
+  labs(x = "Hour of day", y = "")
+```
+
+
+# Parameters
+
+**Note:** I am suspicious of the ability of this code to withstand changes, after reading it. I have attempted to continue to use their variables as much as possible, and change only necessary biophysical parameters. For instance, their sap flux data was sampled every minute. Rather than change the timeframe, even though I can theoretically do that, I chose to interpolate the dataset I created to minute-by-minute values.
+
+De Deurwaerder 2021 had 4 scenarios, where they restricted the ranges of estimated variables to varying degrees:
+
+> **Scenario A: No variable range restrictions.** This scenario assumes no prior knowledge of the system, except for $\delta_{Soil}$ and soil water potential ($\Psi_s$) profiles with soil depth. This corresponds to the most common study conditions (Rothfuss and Javaux, 2017). [...] Ideally, well-characterized $\delta_{Soil}$-profiles from homogeneous soils yield the best results but in natural settings, soil heterogeneity can lead to high spatial variability which causes large random sampling errors. Therefore, we start from clearly defined empirical $\delta^{18}O_S$ and $\Psi_s$ profiles, hereafter the "true profiles" (illustrated by those obtained by Meißner et al. (2012)) and sample more uncertain "observed" soils profiles (using $\pm$ 3 standard deviation from the true $\delta^{18}O_S$ and $\Psi_s$, profiles
+
+> **Scenario B: Variable range restriction of the soil heterogeneity.** Here the $\Psi_s$ and $\delta_{Soil}$-profiles are assumed to be characterized with higher precision. The input parameterization now considers narrow variance ranges, i.e., mean $\pm$ 1 standard deviation of the $\Psi_s$ and $\delta^{18}O_S$ true profiles. [...]
+
+> **Scenario C: Variable range restriction by sampling strategy.** Restricting sampling of $\delta_{xyl}$ –values to periods that correspond to maximum RWU activity may decrease bias (see De Deurwaerder et al., 2020). In this scenario, we assumed that the sampling strategy was optimized in timing (t) and the height of sampling (hos) targeting representative $\delta_{xyl}$ values representative for peak RWU. Specifically, the height of sampling is set at 1.3 m, which corresponds to the general practice of sampling trees at breast height. Subsequently, we define the sampling time by the moment the $\delta_{xyl}$–values that correspond to the plant’s peak water uptake of the plant passes the 1.3 m sampling height, which depends on the plant’s sap flow velocity.
+
+> **Scenario D: Variable range restriction of biophysical plant traits.** Knowledge of natural variance in plant-specific input variables can be used to restrict the model. In practice this can be done via direct in situ measurement or through literature information. In this scenario, we consider the sapwood area ($A_{SAPWOOD}$), the lumen fraction (LF), the effective root radial conductivity ($k_R$) and the instantaneous sap flow (SF) known to a much better degree allowing restriction of their range and distribution (provided in Table 1 and Supplementary Table 2).
+
+The example code appears to be scenario C. Other parameters, such as biophysical, use the "unrestricted" ranges reported in the paper. I will follow this.
+
+
+```{r analysis-variables}
+#| eval: false
+
+
+#-------------------------------------------------------------------------#
+# Multiple number of days studied, needed for spin up of the model.
+#-------------------------------------------------------------------------#
+# LEM: Leaving variable unchanged.
+#-------------------------------------------------------------------------#
+n <- 20            
+
+#-------------------------------------------------------------------------#
+# Time frequency of measurements per hour [in measurments per h].
+#-------------------------------------------------------------------------#
+# LEM: I believe this refers to the sap flux data. Rather than change 
+# this value from the original analysis, I have made the data I'm using
+# match the original value.
+#-------------------------------------------------------------------------#
+tF  <- 60
+
+
+#-------------------------------------------------------------------------#
+# Thickness of sampled layer [in m].
+#-------------------------------------------------------------------------#
+# LEM: This is for setting up a vector of soil depth, for a sampled
+# soil depth profile for SWIFT. This was the original value, I'm not
+# touching it.
+#-------------------------------------------------------------------------#
+dZ  <- 0.001
+
+#-------------------------------------------------------------------------#
+# maximum soil depth [in m].
+#-------------------------------------------------------------------------#
+# LEM: This goes with dZ above. Unchanged.
+#-------------------------------------------------------------------------#
+L   <- 1
+
+
+
+#-------------------------------------------------------------------------#
+# Water potential at soil saturation [in m H2O]. 
+#-------------------------------------------------------------------------#
+# LEM: De Deurwaerder 2021 got their value from Clapp and Hornberger 
+# (1978) for their clay sand soil. I looked up the equivalent value 
+# for our clayey silt soil.
+# Clapp, R. B., and Hornberger, G. M. (1978). Empirical equations for 
+# some soil hydraulic properties. Water Resour. Res. 14, 601–604. 
+# doi: 10.1029/wr014i004p00601
+#-------------------------------------------------------------------------#
+PSIsat <- -0.490
+
+
+
+#-------------------------------------------------------------------------#
+# deuterium offset
+#-------------------------------------------------------------------------#
+# LEM: calculated above with more explanation
+D2Hoffset <- 10.94789
+#-------------------------------------------------------------------------#
+
+
+
+#-------------------------------------------------------------------------#
+# allocation parameter that gives the distribution of absorbing root
+# surface area of the entire plant community. Typical value for 
+# Tropical evergreen forest obtained from Jackson et al (1996)
+#-------------------------------------------------------------------------#
+# LEM: The description they give makes me think I can leave this, but
+# mark this as something I should investigate 
+#-------------------------------------------------------------------------#
+Bbeta <- 0.962
+
+
+#-------------------------------------------------------------------------#
+# Absorbing root area length Soethe et al (2006)
+#-------------------------------------------------------------------------#
+# LEM: Since this is based on Bbeta, not touching this right now
+#-------------------------------------------------------------------------#
+Ltot <- 10000
+BR0 <- (Ltot*100)/(1-Bbeta^100)
+
+
+#-------------------------------------------------------------------------#
+# Ranges for sampling
+# As noted above, we will use ranges corresponding to the "unrestricted"
+# scenario above.
+#-------------------------------------------------------------------------#
+
+#-------------------------------------------------------------------------#
+# Lumen area fraction of sapwood [in m2 m-2]
+#-------------------------------------------------------------------------#
+# LEM: This is not the exact range reported in the paper, but it was 
+# what was in the example code, and it is very close to the unrestricted
+# scenario as reported in the paper. Leaving as-is.
+#-------------------------------------------------------------------------#
+LArange <- c(0.19,0.41)    
+
+#-------------------------------------------------------------------------#
+# Sapwood area variability term 'a', see De Deurwaerder et al 
+# (2021) Table S2
+#-------------------------------------------------------------------------#
+# LEM: As reported in paper for unrestricted scenario.
+#-------------------------------------------------------------------------#
+Asaprange <- c(0.5,1.5)    
+
+
+#-------------------------------------------------------------------------#
+# kr, the effective root radial conductivity [in s-1]
+#-------------------------------------------------------------------------#
+# LEM: As reported in paper for unrestricted scenario.
+#-------------------------------------------------------------------------#
+Krrange <- c(1,14)*10^-10  
+
+
+#-------------------------------------------------------------------------#
+# Daily sapflow variability term 'a', see De Deurwaerder et al 
+# (2021) Table S2
+#-------------------------------------------------------------------------#
+# LEM: As reported in paper for unrestricted scenario.
+#-------------------------------------------------------------------------#
+SFdailyrange <- c(0.5,1.5) 
+
+
+#-------------------------------------------------------------------------#
+# Sampling height [in m]
+#-------------------------------------------------------------------------#
+# LEM: checked protocols for sapflow sensor installation and didn't find
+# a specified height to install them at, so I'm not sure when they were
+# installed. This study was specifically contrasting trees and lianas,
+# and this was the tree scenario assumption, so I will leave it.
+#-------------------------------------------------------------------------#
+Hosrange <- c(1.30, 1.30)
+
+
+#-------------------------------------------------------------------------#
+# Timing of sampling 
+#-------------------------------------------------------------------------#
+# LEM: this represents peak flow times for the Chen et al 2017. Our 
+# sapflow curve is slightly broader. So if I'm using our simulated data,
+# I will increase the range to 9-15.
+#-------------------------------------------------------------------------#
+tstudrange <- c(9,14)*tF   
+
+
+#-------------------------------------------------------------------------#
+# Growth form specific total absorbing root area calculation function
+#-------------------------------------------------------------------------#
+# LEM: "Growth form" in this case referring to trees, as opposed to 
+# lianas, so leaving this as-is.
+#-------------------------------------------------------------------------#
+ARcalc <- function(DBH){
+  return(exp(0.88*log(pi*(DBH*100/2)^2)-2))}
+
+
+#-------------------------------------------------------------------------#
+# Scenario details 
+#-------------------------------------------------------------------------#
+# LEM: Unchanged
+#-------------------------------------------------------------------------#
+ConsideredIsotopes <- 'Dual'   
+# which isotope studied:'D2H','D18O','Dual'
+
+
+#-------------------------------------------------------------------------#
+# Number of generated SWIFT soil datapoints
+#-------------------------------------------------------------------------#
+# LEM: Unchanged
+#-------------------------------------------------------------------------#
+SWIFTitterations <- 250 
+
+
+#-------------------------------------------------------------------------#
+# Local Meteoric water line slope
+#-------------------------------------------------------------------------#
+# LEM: As discussed above, use GMWL values
+#-------------------------------------------------------------------------#
+LMWLslope <- 8.2      
+# Local Meteoric water line intercept
+LMWLintercept <- 11.3  
+
+
+#-------------------------------------------------------------------------#
+# Unit conversion factors 
+#-------------------------------------------------------------------------#
+CTpsi <- 101.97      # Conversion factor between MPa and m H2O
+TCOR <- 24*60*(n-2)  # time correction needed IN THIS EXAMPLE to account 
+# for spin-up of the model (LEM: since I'm leaving the time stuff
+# unchanged, keep)
+cm2_to_m2 <- 1/10000 # conversion from cm2 to m2!!
+
+#-------------------------------------------------------------------------#
+# Setup, based on variable choices above
+#-------------------------------------------------------------------------#
+# Discrete time vector [in h].
+tt  <- seq(0,24*n,length.out = 24*tF*n)
+
+# Discrete depth vector centered [in m].
+Z   <- seq(dZ,L,dZ)  
+
+# Absorbing root length distribution of the entire plant community
+betaCom <- SWIFT::Bprep(Bbeta, BR0, Z)  
+```
+
+
+# Setting up the analysis
+
+I will do Omar Upper and Lower separately, and also combined.
+
+Notes: the iSWIFT package is very prescriptive: datasets have to have certain names and be in certain formats. It takes no arguments, just expects certain things with certain names in the global environment.
+
+## Omar Upper
+
+```{r prepare-datasets}
+#| eval: false
+
+# Plot: one of "OmUpper", "OmLower", or "both"
+prepare_datasets <- function(plot) {
+  library(lubridate)
+  
+  dat <- read.csv(paste0(dir, "Isotope_data_2025.csv"))
+  
+  #-------------------------------------------------------------------------#
+  # Tree isotope data
+  # The code requires a dataset called FD_T, which has only D2H and D18O for
+  # each tree. We also need the range of DBH, so include that.
+  #
+  # We also need an exact copy of FD_T called "FieldData".
+  #-------------------------------------------------------------------------#
+  census <- read.csv(paste0(census_dir, 
+                            "BandDendrometers_Census7_March2025.csv"))
+  
+  if (plot == "OmUpper" || plot == "OmLower") {
+    tree <<- dat[which(dat$Type == "Sapwood" &
+                        dat$Plot==plot),]
+  }
+  if (plot == "both") {
+    tree <<- dat[which(dat$Type == "Sapwood"),]
+  }
+  ind <- match(tree$TreeID, census$TreeID)
+  tree$DBH <<- as.numeric(census$DBH_cm[ind])
+  
+  # Missing DBHs, fill from previous census
+  ind <- which(tree$TreeID == 190171)
+  if (length(ind) == 1) tree$DBH[ind] <<- 25.5
+  
+  ind <- which(tree$TreeID == 190192)
+  if (length(ind) == 1) tree$DBH[ind] <<- 14.5
+  
+  ind <- which(tree$TreeID == 190533)
+  if (length(ind) == 1) tree$DBH[ind] <<- 6.6
+  
+  # Remove the deuterium offset, as calculated above
+  tree$d2H <<- tree$d2H + D2Hoffset 
+  FD_T <<- data.frame(D2H=tree$d2H,
+                     D18O=tree$d18O)
+  FieldData <<- FD_T
+  #-------------------------------------------------------------------------#
+  
+  
+  
+  
+  #-------------------------------------------------------------------------#
+  # Soil isotope data
+  # We need a depth profile with mean and standard deviation of 2H and 18O
+  # concentrations at each depth. Prepare that from our isotope data.
+  #
+  # The dataset is called SoilWaterIsotopes and has columns called:
+  # - Depth: soil depth in meters
+  # - AvgD2H: Mean 2H contentration at that depth in in perMil, V-SMOW
+  # - AvgD18O: Mean 18O contentration at that depth in in perMil, V-SMOW
+  # - sdD2H: Standard deviation of 2H concentration
+  # - sdD18O: Standard deviation of 18O concentration
+  #-------------------------------------------------------------------------#
+  
+  # You can't make this a tibble or certain functions in iSWITFT.R won't work.
+  # Leaving this in as a warning for future iterations.
+  #soil_stats <- dat %>% 
+  #  filter(Type == "Soil", Plot == "OmUpper") %>% 
+  #  group_by(Depth) %>%
+  #  summarize(AvgD2H = mean(d2H),
+  #            AvgD18O = mean(d18O),
+  #            sdD2H = sd(d2H),
+  #            sdD18O = sd(d18O)) %>%
+  #  mutate(Depth = Depth * -0.01)
+  if (plot == "OmUpper" || plot == "OmLower") {
+    dattemp <- dat[which(dat$Type == "Soil" & dat$Plot == plot),]
+  } 
+  if (plot == "both") {
+    dattemp <- dat[which(dat$Type == "Soil"),]
+  }
+  SoilWaterIsotopes <<- data.frame(Depth = unique(dattemp$Depth),
+                                  AvgD2H = NA, AvgD18O = NA, 
+                                  sdD2H = NA, sdD18O = NA)
+  for (i in 1:nrow(SoilWaterIsotopes)) {
+    x <- which(dattemp$Depth == SoilWaterIsotopes$Depth[i])
+    SoilWaterIsotopes$AvgD2H [i] <<- mean(dattemp$d2H[x])
+    SoilWaterIsotopes$AvgD18O[i] <<- mean(dattemp$d18O[x])
+    SoilWaterIsotopes$sdD2H  [i] <<- sd(dattemp$d2H[x])
+    SoilWaterIsotopes$sdD18O [i] <<- sd(dattemp$d18O[x])
+  }
+  # Turn depth into positive depth in meters
+  SoilWaterIsotopes$Depth <<- SoilWaterIsotopes$Depth * -0.01
+  rm(dattemp)
+  #-------------------------------------------------------------------------#
+  
+  
+  
+  #-------------------------------------------------------------------------#
+  # Soil water potential data
+  # Their data is a depth profile, with the mean and standard deviation of 
+  # PSI at each depth. The object is called "SoilWaterPotential" and has the
+  # following fields:
+  # - Depth: soil depth in meters (this doesn't have to be the same depths
+  #   as in SoilWaterIsotopes, apparently)
+  # - AvgPsi: Average soil water potential in MPa
+  # - sdPsi: Standard deviation of soil water potential in MPa
+  #
+  # We have soil water potential data but not a depth profile: sensors were
+  # only deployed at one depth. I will assume constant psi values all the
+  # way down, and use the same depths that isotope concentrations were 
+  # sampled at.
+  #
+  # Coral says: The Teros 1 (first column) should correspond to Omar Upper 
+  # and the 2 to Omar Lower.
+  #-------------------------------------------------------------------------#
+  
+  # The early data is very different from later data. Since the isotopes were
+  # collected in spring of 2025, let's only use data from the year prior to
+  # isotope collection in 3/2025.
+  psi <- read.csv(paste0(soil_psi_dir, "omar.csv"))
+  psi$DT <- as.POSIXct(psi$Timestamp, 
+                       format = "%Y-%m-%d %H:%M:%S",
+                       tz="America/Puerto_Rico")
+  x <- which(psi$DT > ymd_hms("2024-03-01 01:00:00"))
+  psi <- psi[x,]
+  
+  # The Teros21 sensor measures soil water potential in kPa. We will convert
+  # to MPa. Sensor depth is 30 cm.
+  if (plot == "OmUpper") {
+    meanpsi <- mean(psi$Teros1)/1000
+    sdpsi <- sd(psi$Teros1)/1000
+  } 
+  if (plot == "OmLower") {
+    meanpsi <- mean(psi$Teros2)/1000
+    sdpsi <- sd(psi$Teros2)/1000
+  }
+  if (plot == "both") {
+    meanpsi <- mean(c(psi$Teros1, psi$Teros2))/1000
+    sdpsi <- sd(c(psi$Teros1, psi$Teros2))/1000
+  }
+  SoilWaterPotential <<- data.frame(Depth = SoilWaterIsotopes$Depth, 
+                                   AvgPsi = meanpsi,
+                                   sdPsi = sdpsi)
+}
+```
+
+
+
+```{r omar-upper-chen-data}
+#| eval: false
+
+prepare_datasets("OmUpper")
+
+#----- Load Chen et al 2017 dataset --------------------------------------#
+data(SapfluxData)   # sap flux density data [in kg m-2 s-1]
+SapFlow <- SapfluxData$Tree  # growth form specific sapflow 
+
+#----- Dataset specific variables ----------------------------------------#
+DBHrange <- range(tree$DBH)*10^-2 # DBH [in m] 
+relSF <- rep(SapFlow/sum(SapFlow),n) # generic relative SF data 
+# repeated over 20 days
+
+for (i in 1:num_replicates) {
+  Beta.hat_T<-optim(0.95, fn=LogLikOptim, lower = 0.8, upper = 0.995, 
+                    method = "Brent")
+  Csyn_T<-CDPD(beta.i=Beta.hat_T$par)  # SWIFT generated output for best 
+  # beta estimate
+  save(Beta.hat_T, Csyn_T, 
+       file=paste0("../Runs/OmarUpperChen", i, ".RData"))
+}
+```
+
+```{r omar-lower-chen-data}
+#| eval: false
+
+prepare_datasets("OmLower")
+
+#----- Load Chen et al 2017 dataset --------------------------------------#
+data(SapfluxData)   # sap flux density data [in kg m-2 s-1]
+SapFlow <- SapfluxData$Tree  # growth form specific sapflow 
+
+#----- Dataset specific variables ----------------------------------------#
+DBHrange <- range(tree$DBH)*10^-2 # DBH [in m] 
+relSF <- rep(SapFlow/sum(SapFlow),n) # generic relative SF data 
+# repeated over 20 days
+
+for (i in 1:num_replicates) {
+  Beta.hat_T<-optim(0.95, fn=LogLikOptim, lower = 0.8, upper = 0.995, 
+                    method = "Brent")
+  Csyn_T<-CDPD(beta.i=Beta.hat_T$par)  # SWIFT generated output for best 
+  # beta estimate
+  save(Beta.hat_T, Csyn_T, 
+       file=paste0("../Runs/OmarLowerChen", i, ".RData"))
+}
+```
+
+```{r omar-upper-luq-data}
+#| eval: false
+
+prepare_datasets("OmUpper")
+
+#----- Load our approximated sap flux density dataset --------------------#
+load("../Runs/Approximated Omar Upper sap flux.Rdata")
+SapFlow <- final_dat_upper$Tree  # growth form specific sapflow 
+
+#----- Adjust sampling time parameter ------------------------------------#
+tstudrange <- c(9,15)*tF  
+
+#----- Dataset specific variables ----------------------------------------#
+DBHrange <- range(tree$DBH)*10^-2 # DBH [in m] 
+relSF <- rep(SapFlow/sum(SapFlow),n) # generic relative SF data 
+# repeated over 20 days
+
+for (i in 1:num_replicates) {
+  Beta.hat_T<-optim(0.95, fn=LogLikOptim, lower = 0.8, upper = 0.995, 
+                    method = "Brent")
+  Csyn_T<-CDPD(beta.i=Beta.hat_T$par)  # SWIFT generated output for best 
+  # beta estimate
+  save(Beta.hat_T, Csyn_T, 
+       file=paste0("../Runs/OmarUpperLuq", i, ".RData"))
+}
+```
+
+```{r omar-lower-luq-data}
+#| eval: false
+
+prepare_datasets("OmLower")
+
+#----- Load our approximated sap flux density dataset --------------------#
+load("../Runs/Approximated Omar Lower sap flux.Rdata")
+SapFlow <- final_dat_lower$Tree  # growth form specific sapflow 
+
+#----- Adjust sampling time parameter ------------------------------------#
+tstudrange <- c(9,15)*tF  
+
+#----- Dataset specific variables ----------------------------------------#
+DBHrange <- range(tree$DBH)*10^-2 # DBH [in m] 
+relSF <- rep(SapFlow/sum(SapFlow),n) # generic relative SF data 
+# repeated over 20 days
+
+for (i in 1:num_replicates) {
+  Beta.hat_T<-optim(0.95, fn=LogLikOptim, lower = 0.8, upper = 0.995, 
+                    method = "Brent")
+  Csyn_T<-CDPD(beta.i=Beta.hat_T$par)  # SWIFT generated output for best 
+  # beta estimate
+  save(Beta.hat_T, Csyn_T, 
+       file=paste0("../Runs/OmarLowerLuq", i, ".RData"))
+}
+```
+
+```{r omar-all-chen-data}
+#| eval: false
+
+prepare_datasets("both")
+
+#----- Load Chen et al 2017 dataset --------------------------------------#
+data(SapfluxData)   # sap flux density data [in kg m-2 s-1]
+SapFlow <- SapfluxData$Tree  # growth form specific sapflow 
+
+#----- Dataset specific variables ----------------------------------------#
+DBHrange <- range(tree$DBH)*10^-2 # DBH [in m] 
+relSF <- rep(SapFlow/sum(SapFlow),n) # generic relative SF data 
+# repeated over 20 days
+
+for (i in 1:num_replicates) {
+  Beta.hat_T<-optim(0.95, fn=LogLikOptim, lower = 0.8, upper = 0.995, 
+                    method = "Brent")
+  Csyn_T<-CDPD(beta.i=Beta.hat_T$par)  # SWIFT generated output for best 
+  # beta estimate
+  save(Beta.hat_T, Csyn_T, 
+       file=paste0("../Runs/AllOmarChen", i, ".RData"))
+}
+```
+
+```{r omar-all-luq-data}
+#| eval: false
+
+prepare_datasets("both")
+
+#----- Load our approximated sap flux density dataset --------------------#
+load("../Runs/Approximated All Omar sap flux.Rdata")
+SapFlow <- final_dat_all$Tree  # growth form specific sapflow 
+
+#----- Adjust sampling time parameter ------------------------------------#
+tstudrange <- c(9,15)*tF  
+
+#----- Dataset specific variables ----------------------------------------#
+DBHrange <- range(tree$DBH)*10^-2 # DBH [in m] 
+relSF <- rep(SapFlow/sum(SapFlow),n) # generic relative SF data 
+# repeated over 20 days
+
+for (i in 1:num_replicates) {
+  Beta.hat_T<-optim(0.95, fn=LogLikOptim, lower = 0.8, upper = 0.995, 
+                    method = "Brent")
+  Csyn_T<-CDPD(beta.i=Beta.hat_T$par)  # SWIFT generated output for best 
+  # beta estimate
+  save(Beta.hat_T, Csyn_T, 
+       file=paste0("../Runs/AllOmarLuq", i, ".RData"))
+}
+```
+
+
+
+
+
+# Example from package
+
+```{r}
+#| eval: false
+
+# Initialize libraries
+#----------------------
+require(SWIFT)
+require(lhs)
+require(GenSA)
+require(sm)
+require(ks)
+require(sn)
+require(iSWIFT)
+
+# Load associated Datasets 
+#-------------------------
+data(Laussat_SoilWaterIsotopes) # soil water isotope composition 
+#[in permil, V-SMOW]
+data(Laussat_SoilWaterPotential)  # soil water potential [in MPa]
+data(SapfluxData)   # sap flux density data [in kg m-2 s-1]
+data(DataLaussat)   # Xylem water isotope composition [in perMil, V-SMOW]
+
+# Initialize global parameters 
+#-----------------------------
+n   <- 20            # Multiple number of days studied, needed for spin up
+# of the model.
+tF  <- 60            # Time frequency of measurements per hour                                    
+# [in measurments per h].
+tt  <- seq(0,24*n,length.out = 24*tF*n)     # Discrete time vector [in h].
+dZ  <- 0.001         # Thickness of sampled layer [in m].
+L   <- 1             # maximum soil depth [in m].
+Z   <- seq(dZ,L,dZ)  # Discrete depth vector centered [in m].
+PSIsat <- -0.153     # Water potential at soil saturation for clay Sand 
+# soil, [in m H2O](obtained from Clapp and Hornberger
+# (1978))
+D2Hoffset <- 6.855   # deuterium offset (calculated from 'DataLaussat')
+Bbeta <- 0.962       # allocation parameter  that gives the distribution 
+# of absorbing root surface area of the entire plant 
+# community. Typical value for Tropical evergreen 
+# forest obtained from Jackson et al (1996)
+Ltot <- 10000        # Absorbing root area length Soethe et al (2006)
+BR0 <- (Ltot*100)/(1-Bbeta^100)
+betaCom <- SWIFT::Bprep(Bbeta, BR0, Z)  # Absorbing root length distribution of 
+# the entire plant community
+
+# Unit conversion factors 
+#------------------------
+CTpsi <- 101.97      # Conversion factor between MPa and m H2O
+TCOR <- 24*60*(n-2)  # time correction needed IN THIS EXAMPLE to account 
+# for spin-up of the model
+cm2_to_m2 <- 1/10000 # conversion from cm2 to m2!!
+
+# Growth form specific restriction schemes 
+#-----------------------------------------
+
+# Tree restriction scheme - here in function format, declaring globally 
+TreeVariableRanges<- function(){
+  DBHrange <<- c(9.87, 69.39)*10^-2 # DBH [in m] 
+  # (range obtained from 'DataLaussat')
+  LArange <<- c(0.19,0.41)    # Lumen area fraction of sapwood [in m2 m-2]
+  Asaprange <<- c(0.5,1.5)    # Sapwood area variability term 'a', see De 
+  # Deurwaerder et al (2021) Table S2
+  Krrange <<- c(1,14)*10^-10  # kr, the effective root radial conductivity
+  # [in s-1]
+  SFdailyrange <<- c(0.5,1.5) # Daily sapflow variability term 'a', see De 
+  # Deurwaerder et al (2021) Table S2
+  Hosrange <<- c(1.30, 1.30)  # Sampling height [in m]
+  tstudrange <<- c(9,14)*tF   # Timing of sampling 
+  relSF <<- rep(SapFlow/sum(SapFlow),n) # generic relative SF data 
+  # repeated over 20 days
+  # Growth form specific total absorbing root area calculation function
+  ARcalc <<- function(DBH){
+    return(exp(0.88*log(pi*(DBH*100/2)^2)-2))}
+}
+
+# Scenario details 
+#-----------------
+ConsideredIsotopes <- 'Dual'   
+# which isotope studied:'D2H','D18O','Dual'
+SoilWaterPotential <- Laussat_SoilWaterPotential 
+# allocate soil water potential detail representative for Laussat
+SoilWaterIsotopes <- Laussat_SoilWaterIsotopes
+# allocate soil water isotope compositions obtained in Laussat
+SWIFTitterations <- 250 # Number of generated SWIFT datapoints
+LMWLslope <- 7.748      # Local Meteoric water line slope in Laussat
+LMWLintercept <- 4.930  # Local Meteoric water line intercepth in Laussat 
+
+# Field data to be evaluated 
+#---------------------------
+FD <- DataLaussat       # measured isotope data in Laussat
+FD$D2H <- FD$D2H + D2Hoffset   # remove D2Hoffset
+FD_T <- data.frame(D2H=FD$D2H[which(FD$GF=='T')],
+                   D18O=FD$D18O[which(FD$GF=='T')])
+
+# Run iSWIFT per growth form 
+#---------------------------
+# run for 'TREES'
+FieldData <- FD_T            # Allocate field data of trees
+SapFlow <- SapfluxData$Tree  # growth form specific sapflow 
+# rates normalized per sapwood area
+# Chen et al.(2017)[Fig 5b] 
+# [in kg m-2 s-1]
+TreeVariableRanges()          # load growth form specific info
+Beta.hat_T<-optim(0.95, fn=LogLikOptim, lower = 0.8, upper = 0.995, 
+                  method = "Brent")
+Csyn_T<-CDPD(beta.i=Beta.hat_T$par)  # SWIFT generated output for best 
+# beta estimate
+save(Beta.hat_T, Csyn_T, file="Example output.RData")
+
+# Making a simple plot of the field data and iSWIFT output 
+#----------------------------------------------------------
+xlabel=expression(paste(delta,""^18,"O [","\\211",", V-SMOW]"))
+ylabel=expression(paste(delta,""^2,"H [","\\211",", V-SMOW]"))
+# Plot Laussat field data
+plot(FD_L[,"D18O"],FD_L[,"D2H"],  ylim=c(-45,10), xlim=c(-8,3),
+     xlab=xlabel, ylab=ylabel, 
+     mgp = c(2, 0.8, 0), las=1, pch=20, 
+     col='tan1')
+points( FD_T[,"D18O"],FD_T[,"D2H"], pch=20, col='yellowgreen')
+# plot SWIFT generated 'Tree' isotope data
+points(mean(Csyn_T[,"D18O"]),mean(Csyn_T[,"D2H"]),
+       col='springgreen4',pch=15)
+text(mean(Csyn_T[,"D18O"]),mean(Csyn_T[,"D2H"])+2,
+     c(round(Beta.hat_T$par,3)), col="springgreen4", pos=2, cex=0.7)
+arrows(mean(Csyn_T[,"D18O"]), mean(Csyn_T[,"D2H"])-2*sd(Csyn_T[,"D2H"]),
+       mean(Csyn_T[,"D18O"]), mean(Csyn_T[,"D2H"])+2*sd(Csyn_T[,"D2H"]), 
+       length = 0, col="springgreen4", lwd=1.5)
+arrows(mean(Csyn_T[,"D18O"])-2*sd(Csyn_T[,"D18O"]), mean(Csyn_T[,"D2H"]),
+       mean(Csyn_T[,"D18O"])+2*sd(Csyn_T[,"D18O"]), mean(Csyn_T[,"D2H"]), 
+       length = 0, col="springgreen4", lwd=1.5)
+# plot SWIFT generated 'Liana' isotope data
+points(mean(Csyn_L[,"D18O"]),mean(Csyn_L[,"D2H"]), 
+       col='sienna3', pch=15)
+text(mean(Csyn_L[,"D18O"]),mean(Csyn_L[,"D2H"])+2,
+     c(round(Beta.hat_L$par,3)), col="sienna3", pos=2, cex=0.7)
+arrows(mean(Csyn_L[,"D18O"]), mean(Csyn_L[,"D2H"])-2*sd(Csyn_L[,"D2H"]),
+       mean(Csyn_L[,"D18O"]), mean(Csyn_L[,"D2H"])+2*sd(Csyn_L[,"D2H"]), 
+       length = 0, col="sienna3", lwd=1.5)
+arrows(mean(Csyn_L[,"D18O"])-2*sd(Csyn_L[,"D18O"]), mean(Csyn_L[,"D2H"]),
+       mean(Csyn_L[,"D18O"])+2*sd(Csyn_L[,"D18O"]), mean(Csyn_L[,"D2H"]), 
+       length = 0, col="sienna3", lwd=1.5)
+# add legend
+legend('topleft', c(expression(paste('C'[liana])),
+                    expression(paste(chi,''[liana])), expression(paste('C'[tree])),
+                    expression(paste(chi,''[tree]))),  col=c('tan1','sienna3',
+                                                             'yellowgreen','springgreen4'), pch=20, ncol=2, bty='n')
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Installation
+
+iSWIFT downloaded from https://github.com/HannesDeDeurwaerder/iSWIFT
+
+I made a clone in my Github.
+
+```{r}
+#| eval: false
+
+require(devtools)
+
+# INSTALL PACKAGE FROM GITHUB REPOSITORY
+#---------------------------------------
+install_github("HannesDeDeurwaerder/SWIFT")
+install_github("LMurphy186232/iSWIFT")
+```
+
+
+
+# Appendix
+
+### Info on soil water potential when I didn't know we had some
+
+Reading [Soil- Water Potential and Soil-Water Content Concepts and Measurement Methods](https://extensionpubs.unl.edu/publication/ec3046/2019/pdf/view/ec3046-2019.pdf), December 2019, UNL EC3016, by Suat Irmak, Professor, Soil and Water Resources and Irrigation Engineering.
+
+> Accurate determination of soil-water status (SWC or soil-water potential) is a fundamental element of irrigation management. [...] Soil-water content (SWC) is the percentage of water held by the soil, and it can be expressed in terms of either percentage by dry weight or volume basis.
+
+> According to Cassel and Nielson (1986), “total” soil-water potential is defined as “the amount of work that must
+be done per unit quantity of pure water to transport reversibly and isothermally an infinitesimal quantity of water from a pool of pure water at a specified elevation at atmospheric pressure to the soil-water (at a specified point).” 
+
+This sounds like what we want. The theoretical calculation:
+
+$$\Psi_t = \Psi_g + \Psi_m + \Psi_O + ...$$
+
+>  where, $\Psi_t$ is the total potential, $\Psi_g$ the gravitational potential, $\Psi_m$ the soil matric potential (SMP) (matric suction or capillary potential) produced by capillary and surface forces, and $\Psi_O$ the osmotic potential produced by solutes (e.g., dissolved salts) in the soil-water. The ellipsis indicates that additional potentials are theoretically possible.
+
+From more reading - I think you just have to measure soil water potential directly. I have not found a way to calculate it from the data that we have. I have looked at SSURGO data as well and not found anything. Look harder and ask Maria.
+
+That said: we have lots of soil moisture data, as well as sapflow data (on the trees sampled for isotopes? Perhaps.) Perhaps we can find a different plant hydraulic model to sub in.
+
+Wait a minute - the supplement for the win: 
+
+>  Both $\Psi_{S,i,t}$ and $\Psi_{X,O,t}$ can be directly measured using psychrometers or indirectly estimated from sap flow measurements (De Deurwaerder et al., 2020).
